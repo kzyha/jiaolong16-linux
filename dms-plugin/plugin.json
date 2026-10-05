@@ -1,0 +1,12 @@
+{
+  "id": "mechrevo-ec",
+  "name": "控制中心",
+  "description": "蛟龙 MRID6 EC 控制：性能模式切换（性能/游戏/办公）与双风扇转速、CPU/GPU 温度监控",
+  "version": "1.0.0",
+  "author": "p5092",
+  "icon": "mode_fan",
+  "type": "widget",
+  "component": "./MechrevoEC.qml",
+  "settings": "./MechrevoSettings.qml",
+  "permissions": ["settings_read", "settings_write"]
+}
