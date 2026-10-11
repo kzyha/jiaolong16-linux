@@ -187,12 +187,16 @@ if gstate == "1":
         gpu = float(parts[0])
         gpuf = float(parts[1])
     except Exception: gpu = 0.0
-# CPU 平均频率 (跨 policy)
-freqs = []
-for p in sorted(glob.glob("/sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq")):
-    try: freqs.append(int(open(p).read().strip()))
+# CPU 每核频率 (policy* 与 cpuN 一一对应)
+def _corenum(p):
+    return int(p.split("policy")[1].split("/")[0])
+freq_map = {}
+for p in glob.glob("/sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq"):
+    try: freq_map[_corenum(p)] = int(open(p).read().strip())
     except Exception: pass
+freqs = [freq_map[k] for k in sorted(freq_map)]
 cpuf = sum(freqs) / len(freqs) / 1000 if freqs else 0.0  # MHz
+coref = ",".join(str(freq_map[k] // 1000) for k in sorted(freq_map))  # MHz 列表
 # 核显频率 (amdgpu hwmon freq1_input, Hz)
 igpuf = 0.0
 for h in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
@@ -202,15 +206,37 @@ for h in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
             break
     except Exception: pass
 cpu = 0.0
+def _procstat():
+    d = {}
+    try:
+        for l in open("/proc/stat"):
+            if l.startswith("cpu") and len(l) > 4 and l[3].isdigit():
+                f = l.split()
+                d[f[0]] = list(map(int, f[1:]))
+    except Exception: pass
+    return d
+sa = _procstat()
 try:
     e1 = int(rd("/sys/class/powercap/intel-rapl:0/energy_uj"))
     time.sleep(0.3)
     e2 = int(rd("/sys/class/powercap/intel-rapl:0/energy_uj"))
+    sb = _procstat()
+    cores_l = []
+    for c in sorted(sa, key=lambda x: int(x[3:])):
+        if c not in sb: continue
+        tot = sum(y - x for x, y in zip(sa[c], sb[c]))
+        idle = (sb[c][3] - sa[c][3]) + (sb[c][4] - sa[c][4])
+        cores_l.append(max(0, min(100, round(100 * (1 - idle / tot))))) if tot else cores_l.append(0)
+    cores = ",".join(str(x) for x in cores_l)
+except Exception:
+    cores = ""
+try:
     mx = int(rd("/sys/class/powercap/intel-rapl:0/max_energy_range_uj"))
     if e2 < e1: e2 += mx
     cpu = (e2 - e1) / 1e6 / 0.3
-except Exception: pass
-line = f"ac={ac} bat={bat:.1f} cpu={cpu:.1f} gpu={gpu:.1f} gstate={gstate} cpuf={cpuf:.0f} igpuf={igpuf:.0f} gpuf={gpuf:.0f}"
+except Exception:
+    cpu = 0.0
+line = f"ac={ac} bat={bat:.1f} cpu={cpu:.1f} gpu={gpu:.1f} gstate={gstate} cpuf={cpuf:.0f} igpuf={igpuf:.0f} gpuf={gpuf:.0f} coref={coref} cores={cores}"
 if LOG:
     with open("/var/log/mechrevo-power.log", "a") as f:
         f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + line + chr(10))

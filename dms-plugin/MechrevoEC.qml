@@ -40,6 +40,11 @@ PluginComponent {
     property real batAvg: 0
     property real batPeak: 0
     property bool gpuAutoOnDone: false
+    property int detailPage: 0
+    property var cpuFreqHist: []
+    property var cpuPowHist: []
+    property var coresArr: []
+    property var corefArr: []
 
     readonly property var modeNames: ["性能", "游戏", "办公"]
     readonly property var modeIcons: ["bolt", "sports_esports", "work"]
@@ -89,6 +94,20 @@ PluginComponent {
         igpuFreqM = parseInt(kv.igpuf) || 0
         gpuFreqM = parseInt(kv.gpuf) || 0
         gstate = kv.gstate === "1"
+        if (kv.coref !== undefined)
+            corefArr = kv.coref.split(",").map(Number)
+        if (kv.cores !== undefined && kv.cores !== "")
+            coresArr = kv.cores.split(",").map(Number)
+        const fh = cpuFreqHist.slice()
+        fh.push(cpuFreqM)
+        if (fh.length > 80)
+            fh.shift()
+        cpuFreqHist = fh
+        const ph = cpuPowHist.slice()
+        ph.push(cpuPower)
+        if (ph.length > 80)
+            ph.shift()
+        cpuPowHist = ph
         if (!acOnline && batPower > 0) {
             batHistory.push(batPower)
             if (batHistory.length > 120)
@@ -336,7 +355,9 @@ PluginComponent {
                 width: parent.width
                 implicitHeight: root.popoutHeight - popout.headerHeight - popout.detailsHeight - Theme.spacingXL
 
+                // ===== 主页面 =====
                 Column {
+                    visible: root.detailPage === 0
                     anchors.fill: parent
                     spacing: Theme.spacingM
 
@@ -350,7 +371,7 @@ PluginComponent {
                             model: [
                                 { icon: "mode_fan", label: "风扇 1", unit: "RPM", value: root.fan1 },
                                 { icon: "mode_fan", label: "风扇 2", unit: "RPM", value: root.fan2 },
-                                { icon: "device_thermostat", label: "CPU · " + (root.cpuFreqM / 1000).toFixed(2) + " GHz", unit: "°C", value: root.cpuTemp },
+                                { icon: "device_thermostat", label: "CPU · " + (root.cpuFreqM / 1000).toFixed(2) + " GHz", unit: "°C", value: root.cpuTemp, detail: true },
                                 { icon: "device_thermostat", label: "GPU · " + (root.igpuFreqM / 1000).toFixed(2) + " GHz", unit: "°C", value: root.gpuTemp }
                             ]
 
@@ -362,6 +383,14 @@ PluginComponent {
                                 height: 76
                                 radius: Theme.cornerRadius
                                 color: Theme.surfaceContainerHigh
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: metricCard.modelData.detail === true
+                                    hoverEnabled: enabled
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.detailPage = 1
+                                }
 
                                 Column {
                                     anchors.centerIn: parent
@@ -757,6 +786,219 @@ PluginComponent {
                                     onClicked: {
                                         root.setMode(index)
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ===== CPU 详情页 =====
+            Column {
+                visible: root.detailPage === 1
+                anchors.fill: parent
+                spacing: Theme.spacingS
+
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingS
+
+                    StyledRect {
+                        width: 32
+                        height: 32
+                        radius: Theme.cornerRadius
+                        color: backMouse.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+
+                        DankIcon {
+                            anchors.centerIn: parent
+                            name: "arrow_back"
+                            size: 18
+                            color: Theme.primary
+                        }
+
+                        MouseArea {
+                            id: backMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.detailPage = 0
+                        }
+                    }
+
+                    StyledText {
+                        text: "CPU 详情"
+                        font.pixelSize: Theme.fontSizeLarge
+                        font.weight: Font.Bold
+                        color: Theme.surfaceText
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    StyledText {
+                        text: (root.cpuFreqM / 1000).toFixed(2) + " GHz · " + root.cpuTemp + "°C · " + root.cpuPower.toFixed(1) + "W"
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceVariantText
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right
+                    }
+                }
+
+                StyledRect {
+                    width: parent.width
+                    height: 108
+                    radius: Theme.cornerRadius
+                    color: Theme.surfaceContainerHigh
+
+                    StyledText {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.margins: Theme.spacingS
+                        text: "频率 (GHz) · " + root.cpuFreqHist.length + " 采样"
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceVariantText
+                    }
+
+                    Canvas {
+                        id: freqChart
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingM
+                        anchors.topMargin: 26
+                        renderStrategy: Canvas.Cooperative
+
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            var d = root.cpuFreqHist
+                            if (d.length < 2)
+                                return
+                            var mn = Math.min.apply(null, d)
+                            var mx = Math.max.apply(null, d)
+                            if (mx - mn < 100)
+                                mx = mn + 100
+                            var W = width, H = height
+                            ctx.strokeStyle = Qt.rgba(0.4, 0.73, 0.42, 1)
+                            ctx.lineWidth = 1.5
+                            ctx.beginPath()
+                            for (var i = 0; i < d.length; i++) {
+                                var x = i / (d.length - 1) * (W - 8) + 4
+                                var y = H - 4 - (d[i] - mn) / (mx - mn) * (H - 8)
+                                if (i)
+                                    ctx.lineTo(x, y)
+                                else
+                                    ctx.moveTo(x, y)
+                            }
+                            ctx.stroke()
+                        }
+
+                        Connections {
+                            target: root
+                            function onCpuFreqHistChanged() { freqChart.requestPaint() }
+                        }
+                    }
+                }
+
+                StyledRect {
+                    width: parent.width
+                    height: 108
+                    radius: Theme.cornerRadius
+                    color: Theme.surfaceContainerHigh
+
+                    StyledText {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.margins: Theme.spacingS
+                        text: "功率 (W) · " + root.cpuPowHist.length + " 采样"
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceVariantText
+                    }
+
+                    Canvas {
+                        id: powChart
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingM
+                        anchors.topMargin: 26
+                        renderStrategy: Canvas.Cooperative
+
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            var d = root.cpuPowHist
+                            if (d.length < 2)
+                                return
+                            var mn = Math.min.apply(null, d)
+                            var mx = Math.max.apply(null, d)
+                            if (mx - mn < 1)
+                                mx = mn + 1
+                            var W = width, H = height
+                            ctx.strokeStyle = Qt.rgba(0.91, 0.6, 0.22, 1)
+                            ctx.lineWidth = 1.5
+                            ctx.beginPath()
+                            for (var i = 0; i < d.length; i++) {
+                                var x = i / (d.length - 1) * (W - 8) + 4
+                                var y = H - 4 - (d[i] - mn) / (mx - mn) * (H - 8)
+                                if (i)
+                                    ctx.lineTo(x, y)
+                                else
+                                    ctx.moveTo(x, y)
+                            }
+                            ctx.stroke()
+                        }
+
+                        Connections {
+                            target: root
+                            function onCpuPowHistChanged() { powChart.requestPaint() }
+                        }
+                    }
+                }
+
+                Grid {
+                    width: parent.width
+                    columns: 8
+                    spacing: 4
+
+                    Repeater {
+                        model: 16
+
+                        StyledRect {
+                            id: coreCell
+                            required property int index
+                            readonly property int util: root.coresArr[index] !== undefined ? root.coresArr[index] : 0
+                            readonly property int freq: root.corefArr[index] !== undefined ? root.corefArr[index] : 0
+                            width: (parent.width - 7 * 4) / 8
+                            height: 52
+                            radius: 4
+                            color: Theme.surfaceContainerHigh
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: parent.height * (coreCell.util / 100)
+                                color: coreCell.util >= 80 ? Qt.rgba(0.91, 0.3, 0.22, 0.35) : Qt.rgba(0.4, 0.73, 0.42, 0.3)
+                                radius: 4
+                            }
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 0
+
+                                StyledText {
+                                    text: coreCell.index
+                                    font.pixelSize: 9
+                                    color: Theme.surfaceVariantText
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                                StyledText {
+                                    text: coreCell.util + "%"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.Bold
+                                    color: Theme.surfaceText
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                                StyledText {
+                                    text: (coreCell.freq / 1000).toFixed(1) + "G"
+                                    font.pixelSize: 9
+                                    color: Theme.surfaceVariantText
+                                    anchors.horizontalCenter: parent.horizontalCenter
                                 }
                             }
                         }
