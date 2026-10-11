@@ -31,6 +31,9 @@ PluginComponent {
     property real batPower: 0
     property real cpuPower: 0
     property real gpuPower: 0
+    property int cpuFreqM: 0
+    property int igpuFreqM: 0
+    property int gpuFreqM: 0
     property bool gstate: false
     property bool batteryShield: pluginData.batteryShield !== false
     property var batHistory: []
@@ -82,6 +85,9 @@ PluginComponent {
         batPower = parseFloat(kv.bat) || 0
         cpuPower = parseFloat(kv.cpu) || 0
         gpuPower = parseFloat(kv.gpu) || 0
+        cpuFreqM = parseInt(kv.cpuf) || 0
+        igpuFreqM = parseInt(kv.igpuf) || 0
+        gpuFreqM = parseInt(kv.gpuf) || 0
         gstate = kv.gstate === "1"
         if (!acOnline && batPower > 0) {
             batHistory.push(batPower)
@@ -344,8 +350,8 @@ PluginComponent {
                             model: [
                                 { icon: "mode_fan", label: "风扇 1", unit: "RPM", value: root.fan1 },
                                 { icon: "mode_fan", label: "风扇 2", unit: "RPM", value: root.fan2 },
-                                { icon: "device_thermostat", label: "CPU", unit: "°C", value: root.cpuTemp },
-                                { icon: "device_thermostat", label: "GPU", unit: "°C", value: root.gpuTemp }
+                                { icon: "device_thermostat", label: "CPU · " + (root.cpuFreqM / 1000).toFixed(2) + " GHz", unit: "°C", value: root.cpuTemp },
+                                { icon: "device_thermostat", label: "GPU · " + (root.igpuFreqM / 1000).toFixed(2) + " GHz", unit: "°C", value: root.gpuTemp }
                             ]
 
                             StyledRect {
@@ -403,7 +409,7 @@ PluginComponent {
                                 { icon: "bolt", label: "CPU", unit: " W", value: root.cpuPower.toFixed(1), sub: "" },
                                 { icon: "memory", label: "独显", unit: " W",
                                   value: root.gstate ? root.gpuPower.toFixed(1) : "--",
-                                  sub: root.gstate ? "" : "已屏蔽" },
+                                  sub: root.gstate ? (root.gpuFreqM / 1000).toFixed(1) + " GHz" : "已屏蔽" },
                                 { icon: "battery_charging_full", label: "电池", unit: " W",
                                   value: root.acOnline ? "--" : root.batPower.toFixed(1),
                                   sub: root.acOnline ? "适配器" : ("均" + root.batAvg.toFixed(0) + " 峰" + root.batPeak.toFixed(0)) }
